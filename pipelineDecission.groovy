@@ -2,61 +2,46 @@ def call(Map configMap) {
     pipeline {
         agent any
 
-        environment {
-            PROJECT_NAME = configMap.project
-            COMPONENT    = configMap.component
-        }
-
         stages {
-            stage('Checkout Code') {
+            stage('Checkout') {
                 steps {
-                    git branch: "${env.BRANCH_NAME}", url: "git@github.com:nandinimandli/autodeploy-project.git"
+                    git branch: "${env.BRANCH_NAME}", url: 'git@github.com:nandinimandli/autodeploy-project.git'
                 }
             }
 
             stage('Build') {
                 steps {
-                    echo "🔨 Building ${configMap.component} component of ${configMap.project} project"
+                    echo "🔧 Building component: ${configMap.component}"
                     sh 'npm install'
                 }
             }
 
-            stage('Unit Test') {
+            stage('Test') {
                 steps {
-                    echo "🧪 Running Unit Tests..."
-                    sh 'npm test || true' // avoid failure due to test exit codes
+                    echo "🧪 Running tests"
+                    sh 'npm test || echo "Tests skipped"'
                 }
             }
 
-            stage('Build Docker Image') {
+            stage('Docker Build & Push') {
                 steps {
-                    echo "🐳 Building Docker image..."
-                    sh "docker build -t ${configMap.project}-${configMap.component}:latest ."
-                }
-            }
-
-            stage('Push Docker Image') {
-                steps {
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                        sh """
-                          echo $PASS | docker login -u $USER --password-stdin
-                          docker tag ${configMap.project}-${configMap.component}:latest $USER/${configMap.project}-${configMap.component}:latest
-                          docker push $USER/${configMap.project}-${configMap.component}:latest
-                        """
+                    script {
+                        dockerImage = docker.build("${configMap.component}:${env.BUILD_ID}")
+                        docker.withRegistry('', 'dockerhub-credentials-id') {
+                            dockerImage.push()
+                        }
                     }
                 }
             }
 
-            stage('Deploy to EKS') {
+            stage('Helm Deploy to EKS') {
                 steps {
-                    echo "🚀 Deploying to Kubernetes"
-                    sh """
-                      helm upgrade --install ${configMap.component} ./helm \
-                      -f ./helm/values.yaml \
-                      --set image.repository=$USER/${configMap.project}-${configMap.component} \
-                      --set image.tag=latest \
-                      --namespace=netflix-app
-                    """
+                    echo "🚀 Deploying to EKS using Helm"
+                    sh '''
+                    helm upgrade --install ${component} helm \
+                    --namespace ${component}-namespace \
+                    --set image.tag=${BUILD_ID}
+                    '''
                 }
             }
         }
