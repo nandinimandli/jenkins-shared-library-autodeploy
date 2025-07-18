@@ -37,11 +37,11 @@ def call(Map configMap) {
             stage('Helm Deploy to EKS') {
                 steps {
                     echo "🚀 Deploying to EKS using Helm"
-                    sh '''
-                    helm upgrade --install ${component} helm \
-                    --namespace ${component}-namespace \
-                    --set image.tag=${BUILD_ID}
-                    '''
+                    sh """
+                    helm upgrade --install ${configMap.component} helm \
+                      --namespace ${configMap.component}-namespace \
+                      --set image.tag=${env.BUILD_ID}
+                    """
                 }
             }
         }
